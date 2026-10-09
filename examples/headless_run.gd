@@ -23,7 +23,7 @@ const PhProps := preload("../game/ph_props.gd")
 
 const SECTIONS := 18
 
-const CHECKS := 78
+const CHECKS := 79
 
 const TICK_RATE := 64
 const TICK := 1.0 / float(TICK_RATE)
@@ -557,6 +557,7 @@ func _test_bots() -> void:
 		"every stand-in prop is hiding as something by the end of the hide (%d of %d)" % [hidden.size(), game.players_on(PhGame.PROPS).size()])
 	await _step(game, TICK_RATE * 6)
 	_check(game.phase == PhGame.Phase.SEEK or game.phase == PhGame.Phase.IDLE, "and the round goes on without anybody at the keyboard")
+
 	_finished()
 
 
@@ -581,6 +582,19 @@ func _test_the_client() -> void:
 		(menu as DotMenu).picker.close()
 	var snapshot: Dictionary = client.call("board_snapshot")
 	_check((snapshot["players"] as Array).size() >= 2, "the board lists the room")
+
+	# A round started the way dot-match starts one, with this keyboard drawn to hunt. The round
+	# arms its hunters and THEN begins the hide, and the client used to drop every gun at the
+	# start of a hide: a hunter seeking with a gun nobody could see, in every real round.
+	var world: PhGame = client.get("game")
+	world.wish_side(&"local", PhGame.HUNTERS)
+	world._on_round_started(world.round_number + 1)
+	for i in 4:
+		await get_tree().process_frame
+	_check(world.team_of(&"local") == PhGame.HUNTERS and world.phase == PhGame.Phase.HIDE
+		and client.get("weapons") != null and client.get("view_model") != null,
+		"a hunter's gun is in their hands through the hide",
+		"side %d, phase %d, weapons %s" % [world.team_of(&"local"), world.phase, client.get("weapons")])
 
 	remove_child(client)
 	client.free()

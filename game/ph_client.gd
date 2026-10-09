@@ -340,7 +340,11 @@ func _on_phase(phase: int) -> void:
 
 	match phase:
 		PhGame.Phase.HIDE:
-			_disarm_locally()
+			# Only a prop puts last round's gun down. A round arms its hunters BEFORE it starts
+			# the hide, so dropping every gun here took the one just handed out, and a hunter
+			# sought all round with a gun nobody could see (found in a browser, 2026-10-09).
+			if not hunter:
+				_disarm_locally()
 			_view_chosen = false
 			_follow_side()
 			if audio != null:
