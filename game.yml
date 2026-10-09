@@ -22,11 +22,10 @@ scene: scenes/ph_server.tscn
 client_scene: game/ph.tscn
 module: game/ph_module.gd
 
-# The maps are their own pack, mounted on the server alone: a server sends the one it is
-# playing to each client as a document, so a client never needs a map file. A new map is a
-# release of mg-prop-hunt-maps and nothing else. See CLAUDE.md.
-server_dependencies:
-  - gamemann/mg-prop-hunt-maps
+# No maps pack is named here. Which maps a server runs is the server owner's choice, made in
+# their deployment's map config (dot-server-deploy's cfg/content.yml, gamemann/mg-prop-hunt-maps
+# for the stock set); the module fetches what the server names. This game's own pack ships
+# only its built-in the practice map.
 
 cvars:
   ph_round_seconds: "300"

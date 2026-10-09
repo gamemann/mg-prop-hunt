@@ -13,8 +13,8 @@ const PhPlayer := preload("../game/ph_player.gd")
 ## [DotGameModule]'s order runs, a cvar is typed at a console and a round is played by
 ## nothing but the stand-ins the module seats itself.
 
-const SECTIONS := 8
-const CHECKS := 39
+const SECTIONS := 9
+const CHECKS := 42
 
 const SERVER_DIR := "user://ph_dedicated"
 const PORT := 28931
@@ -53,6 +53,7 @@ func _run() -> void:
 		await _test_the_module_loads()
 		_test_the_commands()
 		await _test_a_round_runs()
+		await _test_a_reload_keeps_delivered_maps()
 		await _test_the_map_vote()
 		await _test_it_unloads_cleanly()
 
@@ -304,6 +305,55 @@ func _test_the_map_vote() -> void:
 	game.call("_lay_out_map")
 	_check(str(game.map_doc.get("id", "")) == "ph_house" and game.next_map_id == &"",
 		"and the next map laid is the one voted for, once", "%s / %s" % [game.map_doc.get("id", ""), game.next_map_id])
+	_finished()
+
+
+## A reload keeps the maps the server names. `ph_reload` reads the map directory again with
+## `load_from`, which forgets everything read before, and in two of the three games built this
+## way it stopped there: every delivered map was gone until a restart, with nothing logged.
+## A pack "mounted" on the disk and a descriptor naming it stand in for dot-cloud and the
+## deployment's map config (dot-server-deploy's cfg/content.yml), which a suite has neither of.
+func _test_a_reload_keeps_delivered_maps() -> void:
+	_section("a reload keeps the maps the server names")
+	var key := "dot-test/ph-delivered@1.0.0"
+	var mount := DotGameContent.mount_of(key)
+	var dir := mount.path_join("maps")
+	var id := &"ph_delivered_check"
+	DirAccess.make_dir_recursive_absolute(dir)
+	var doc: Dictionary = game.catalogue.practice()
+	doc["id"] = String(id)
+	var file := FileAccess.open(dir.path_join("delivered_check.json"), FileAccess.WRITE)
+	file.store_string(JSON.stringify(doc))
+	file.close()
+
+	# The manager's running descriptor, named the way a deployment names it. Restored below:
+	# `_current` is the manager's own, and nothing else in this suite should see the pack.
+	var manager: Object = server.games
+	var was: Variant = manager.get("_current")
+	var named := DotGameDescriptor.new()
+	named.maps = PackedStringArray([key])
+	manager.set("_current", named)
+
+	var _first := _run_command("ph_reload")
+	for _i in range(3):
+		await get_tree().process_frame
+	_check(game.catalogue.maps.has(id), "a map the server names is in the catalogue after ph_reload",
+		str(game.catalogue.maps.keys()))
+	_check(game.catalogue.maps.has(&"ph_practice"),
+		"beside the built-in one")
+
+	manager.set("_current", was)
+	var _second := _run_command("ph_reload")
+	for _i in range(3):
+		await get_tree().process_frame
+	_check(not game.catalogue.maps.has(id), "and it came from the server's list: unnamed, a reload drops it")
+
+	DirAccess.remove_absolute(dir.path_join("delivered_check.json"))
+	var path := dir
+	while path != "res://dot_cloud":
+		DirAccess.remove_absolute(path)
+		path = path.get_base_dir()
+	DirAccess.remove_absolute("res://dot_cloud")
 	_finished()
 
 

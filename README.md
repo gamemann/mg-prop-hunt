@@ -54,7 +54,7 @@ cd projects/mg-prop-hunt
 
 On Windows, run `bootstrap.ps1` instead and open the project in Godot.
 
-The maps come from the mg-prop-hunt-maps checkout, which bootstrap links into `maps/` for you.
+The maps come from the mg-prop-hunt-maps checkout, which bootstrap links into `maps/` for you. On a deployed server they come from the server instead: the game ships only its built-in practice map, and the server owner picks the maps pack (`gamemann/mg-prop-hunt-maps`, or their own) in dot-server-deploy's `cfg/content.yml`.
 
 `game.sh` does everything else:
 

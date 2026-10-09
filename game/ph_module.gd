@@ -173,34 +173,41 @@ func _game_load() -> DotResult:
 	# map with nothing listening to `world_rebuilt` — one the server knows about and no client
 	# is ever told about. Invisible floors: a player stands on nothing and the server says they
 	# are fine.
-	_add_delivered_maps(world)
+	var _delivered: int = await _add_delivered_maps(world)
 	world.start()
 
 	log_info("the map is up", world.describe())
 	return DotResult.success(null)
 
 
-## The maps delivered beside this game: every server-only pack its descriptor names, read for
-## a `maps/` directory where it is mounted.
+## The maps the SERVER names for this game, fetched and added to the catalogue. Returns how
+## many documents they held.
 ##
-## [b]Server-only, because a client never needs a map file.[/b] The server sends the map it is
-## playing in MAP, so the documents are `server_dependencies` in `game.yml` — mounted on this
-## machine by dot-server's game manager and never put in a client's content sync. Duck-typed
-## through the manager, because a dot-server from before the field has no
-## `current_server_dependencies`, and on one of those this game plays its built-in map.
-func _add_delivered_maps(world: PhGame) -> void:
+## [b]The server's list, not this game's.[/b] A map pack used to be a `server_dependencies`
+## entry in `game.yml`, which travels in this game's own pack — so a new map meant a release
+## of the game, and a server owner could not choose which maps to run. The owner names them
+## now in their deployment's map config (dot-server-deploy's `cfg/content.yml`, which fills
+## [member DotGameDescriptor.maps]); [DotGameContent] fetches each pack and hands back its
+## `maps/` directory. A server that still names one under `server_dependencies` keeps working,
+## because DotGameContent reads those too.
+##
+## [b]Still server-only.[/b] The server sends the map it is playing in MAP, so a client never
+## needs a map file and none of these is in a client's content sync. With nothing named, this
+## game plays its built-in map.
+##
+## [b]Called after EVERY catalogue load[/b], not only the first: `load_from` forgets everything
+## read before, and a reload that did not come back here dropped every delivered map — which
+## is what mg-wipeout and mg-deathrun did until the three were moved onto DotGameContent.
+func _add_delivered_maps(world: PhGame) -> int:
 	if server == null or world.catalogue == null:
-		return
+		return 0
 
-	var games: Object = server.get("games")
+	var read := 0
 
-	if games == null or not games.has_method("current_server_dependencies"):
-		return
+	for root in await DotGameContent.map_dirs(server, "maps"):
+		read += world.catalogue.add_directory(root)
 
-	for key: String in games.call("current_server_dependencies"):
-		var parts := DotGameDescriptor.split_key(key)
-		var root := DotCloudClient.mount_prefix_for(StringName(parts[0]), parts[1]).path_join("maps")
-		var _read := world.catalogue.add_directory(root)
+	return read
 
 
 ## Who somebody is reaches the world: a face as they are seated, and the real name and face
@@ -787,7 +794,7 @@ func _cmd_reload(ctx: DotCmdContext) -> void:
 		return
 
 	var loaded := world.catalogue.load_from(world.config.map_directory)
-	_add_delivered_maps(world)
+	loaded += await _add_delivered_maps(world)
 
 	if vote != null:
 		vote.refresh_maps()
