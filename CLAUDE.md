@@ -99,7 +99,7 @@ tools/shot.sh --view=hunter --board --name=board
 godot --headless --path . --script tools/measure_props.gd -- --check   # catalogue matches the models
 ```
 
-`headless_run`'s and `headless_net`'s totals were wrong when first written and both fired; `headless_maps` was armed with a spawn put inside the practice kitchen's chair.
+`headless_run`'s and `headless_net`'s totals were wrong when first written and both fired; `headless_maps` was armed with a spawn put inside the practice kitchen's chair. Without `maps/` linked in (CI clones this repository alone) `headless_maps` checks the practice house only, as mg-deathrun's headless_courses does, and says so.
 
 ## Delivery
 

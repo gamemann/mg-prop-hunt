@@ -20,8 +20,12 @@ const PhMapDoc := preload("../game/ph_map_doc.gd")
 
 const MAPS := ["ph_practice", "ph_school", "ph_house", "ph_office", "ph_woods"]
 const CHECKS_PER_MAP := 8
-const SECTIONS := 6
-const CHECKS := 1 + CHECKS_PER_MAP * 5
+
+## The maps actually checked: all of MAPS, or only the practice house where `maps/` is not
+## linked in (CI, which clones this repository alone). As mg-deathrun's headless_courses
+## does: the delivered maps are checked wherever they are present, which is every machine
+## that has run dot-bootstrap. Sections and checks are counted against this list.
+var _maps: Array = []
 
 ## A person's capsule, for "is this spawn clear".
 const RADIUS := 0.4
@@ -52,7 +56,7 @@ func _run() -> void:
 
 	await _test_the_catalogue()
 
-	for id: String in MAPS:
+	for id: String in _maps:
 		await _test_map(StringName(id))
 
 	print("")
@@ -64,12 +68,15 @@ func _run() -> void:
 
 	var code := 1 if _failed > 0 else 0
 
-	if _sections_entered != _sections_finished or _sections_entered != SECTIONS:
-		print("ERROR: %d of %d sections finished, %d expected." % [_sections_finished, _sections_entered, SECTIONS])
+	var sections := 1 + _maps.size()
+	var checks := 1 + CHECKS_PER_MAP * _maps.size()
+
+	if _sections_entered != _sections_finished or _sections_entered != sections:
+		print("ERROR: %d of %d sections finished, %d expected." % [_sections_finished, _sections_entered, sections])
 		code = 1
 
-	if _passed + _failed != CHECKS:
-		print("ERROR: %d checks ran, %d expected. A section aborted part-way." % [_passed + _failed, CHECKS])
+	if _passed + _failed != checks or _maps.is_empty():
+		print("ERROR: %d checks ran, %d expected. A section aborted part-way." % [_passed + _failed, checks])
 		code = 1
 
 	get_tree().quit(code)
@@ -84,9 +91,15 @@ func _test_the_catalogue() -> void:
 		ids.append(String(id))
 
 	ids.sort()
+	var linked := DirAccess.dir_exists_absolute(ProjectSettings.globalize_path("res://maps"))
+	_maps = MAPS.duplicate() if linked else ["ph_practice"]
+
+	if not linked:
+		print("(no map directory: the built-in practice house only)")
+
 	var missing: Array = []
 
-	for id: String in MAPS:
+	for id: String in _maps:
 		if not ids.has(id):
 			missing.append(id)
 
