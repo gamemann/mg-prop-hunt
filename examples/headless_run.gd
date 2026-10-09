@@ -551,8 +551,10 @@ func _test_bots() -> void:
 	game.start()
 	await _step(game, TICK_RATE * 8)
 	var hidden := game.players_on(PhGame.PROPS).filter(func(p: PhPlayer) -> bool: return p.is_disguised())
-	_check(hidden.size() * 2 >= game.players_on(PhGame.PROPS).size(),
-		"most stand-in props are hiding as something by the end of the hide (%d of %d)" % [hidden.size(), game.players_on(PhGame.PROPS).size()])
+	# Every one, not most: a stand-in whose look met the wrong thing used to ask again every
+	# tick for the rest of the round, in the open.
+	_check(hidden.size() == game.players_on(PhGame.PROPS).size(),
+		"every stand-in prop is hiding as something by the end of the hide (%d of %d)" % [hidden.size(), game.players_on(PhGame.PROPS).size()])
 	await _step(game, TICK_RATE * 6)
 	_check(game.phase == PhGame.Phase.SEEK or game.phase == PhGame.Phase.IDLE, "and the round goes on without anybody at the keyboard")
 	_finished()

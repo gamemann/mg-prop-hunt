@@ -1594,8 +1594,14 @@ func _bot_hide(player: PhPlayer, command: DotFpsCommand) -> void:
 	player.controller.state.yaw = command.yaw
 	player.controller.state.pitch = command.pitch
 
-	if not request_disguise(player.player_id):
-		# Something in the way, or not one it may be: another.
+	# Becomes it directly rather than by the look a person's request goes through. The look is
+	# there to keep a CLIENT honest about what it is pointing at; a stand-in is the server's
+	# own, and one whose ray met a rug or the prop in front kept asking every tick for the
+	# rest of the round, standing in the open (rendered in a browser, 2026-10-09).
+	if not disguise_as(player.player_id, map.prop_id(target)):
+		var tried: Array = state.get("tried", [])
+		tried.append(target)
+		state["tried"] = tried
 		state["target"] = -1
 
 
@@ -1606,11 +1612,13 @@ func _bot_pick_prop(player: PhPlayer) -> int:
 	var at := player.controller.state.position
 	var draw := random.stream_for(&"bot_prop", round_number * 4096 + int(player.entity_id % 4096))
 
+	var tried: Array = _bot_state(player).get("tried", [])
+
 	for index in range(map.props.size()):
 		var prop: Dictionary = map.props[index]
 		var prop_id: StringName = prop["id"]
 
-		if not props_catalogue.may_disguise(prop_id) or not DotPropDisguise.may_take(prop["size"], rules).ok:
+		if tried.has(index) or not props_catalogue.may_disguise(prop_id) or not DotPropDisguise.may_take(prop["size"], rules).ok:
 			continue
 
 		var distance := at.distance_to((prop["transform"] as Transform3D).origin)
