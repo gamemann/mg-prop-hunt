@@ -25,7 +25,6 @@ const PhMaterials := preload("ph_materials.gd")
 ##
 ## `maps/README.md` in mg-prop-hunt-maps is the mapper's copy of this.
 
-const CHANNEL := "ph.map_doc"
 
 ## The format this build reads. A document written for a later one is refused rather than
 ## half-built.

@@ -22,12 +22,10 @@ const PhProps := preload("ph_props.gd")
 ## sofa's picture is two metres across where its hull is under one. [method _fit_hitboxes]
 ## turns one box to the prop's turn every tick on the server, which is where shots resolve.
 
-const CHANNEL := "ph.player"
-
 ## Metres above a player's feet that their eyes are, in their own body.
 const EYE_HEIGHT := 1.6
 
-## Seconds a player's own body hull uses: the family's.
+## A player's own body hull, in metres: the family's.
 const BODY_RADIUS := 0.35
 const BODY_HEIGHT := 1.8
 const BODY_CROUCH := 0.95

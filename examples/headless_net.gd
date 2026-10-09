@@ -25,7 +25,7 @@ const PhPlayer := preload("../game/ph_player.gd")
 ## Sections and checks are both counted; mg-smash-copter's notes say why the second matters.
 
 const SECTIONS := 12
-const CHECKS := 47
+const CHECKS := 49
 
 const CLIENT_PEER := 7
 const SESSION := 42
@@ -291,8 +291,16 @@ func _test_the_blindfold_is_on_the_wire() -> void:
 		"the prop moved on the server and the hunter's copy did not",
 		"%.2f m from where it was" % copy.global_position.distance_to(was))
 
+	# What it became is held back too, and told the moment the seek starts.
+	var heard_before := int(_heard.get("disguises", 0))
+	var _hid := _server_game.disguise_as(_stand_in.player_id, &"furniture_chair")
+	await _steps(4)
+	_check(_stand_in.is_disguised() and int(_heard.get("disguises", 0)) == heard_before and not copy.is_disguised(),
+		"nor what it became", "%d events" % (int(_heard.get("disguises", 0)) - heard_before))
+
 	_server_game._set_phase(PhGame.Phase.SEEK)
 	await _steps(20)
+	_check(copy.is_disguised() and copy.disguise.prop_id == &"furniture_chair", "and is told as the seek starts")
 	_check(copy.global_position.distance_to(_stand_in.global_position) < 0.3,
 		"the moment the hunters are let go, the prop is where it is",
 		"%.2f m apart" % copy.global_position.distance_to(_stand_in.global_position))
@@ -368,6 +376,10 @@ func _test_turning_and_taunting() -> void:
 	_check(absf(server_me.disguise.roll) > 1.0 and is_equal_approx(_mine().disguise.roll, server_me.disguise.roll),
 		"a tilt lands on both ends", "roll %.1f / %.1f" % [_mine().disguise.roll, server_me.disguise.roll])
 
+	# Paid only while the hunters are looking: into the seek, and past the cooldown of any
+	# taunt the hide's checks made.
+	_server_game._set_phase(PhGame.Phase.SEEK)
+	await _steps(int(_server_game.config.taunt_cooldown * SERVER_TICK_RATE) + 4)
 	var points := server_me.points
 	_client_bridge.ask_taunt()
 	await _steps(4)

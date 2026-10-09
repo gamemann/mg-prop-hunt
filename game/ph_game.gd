@@ -987,8 +987,71 @@ func disguise_as(id: StringName, prop_id: StringName) -> bool:
 
 	var next := DotPropDisguise.of(prop_id, size)
 	next.yaw = player.controller.state.yaw
+
+	if not _make_room(player, next):
+		refused.emit(id, "There is no room to be a %s here." % props_catalogue.title_of(prop_id).to_lower())
+		return false
+
 	_wear(player, next)
 	return true
+
+
+## Makes sure [param player] has room for [param next]'s hull, moving them a little if they
+## need it. False when there is nowhere near enough.
+##
+## [b]A hull changes size in place.[/b] A bottle beside a wall that becomes a bookcase, or a
+## small prop under a table that shows its face, has a capsule half inside the wall or the
+## table, and the motor resolves that by shoving them out a different way on each machine, or
+## not at all. So the server looks first: where they stand, then a step to each side, never
+## through a wall to get there, never off the floor. A move is a teleport, which the owner's
+## client takes from the next snapshot like any other correction.
+func _make_room(player: PhPlayer, next: DotPropDisguise) -> bool:
+	var world := get_world_3d()
+
+	if world == null or physics == null or player.controller == null:
+		return true
+
+	var hull := DotPropDisguise.hull(next.size, rules) if next.is_disguised() \
+		else Vector2(PhPlayer.BODY_RADIUS, PhPlayer.BODY_HEIGHT)
+	var at := player.controller.state.position
+	var space := world.direct_space_state
+	var mask := physics.layer_mask(&"world") | physics.layer_mask(&"prop")
+
+	var capsule := CapsuleShape3D.new()
+	# A hair under the real size, or a hull resting on the floor and touching a wall counts
+	# as being inside both.
+	capsule.radius = maxf(hull.x - 0.03, 0.05)
+	capsule.height = maxf(hull.y - 0.06, capsule.radius * 2.0)
+	var query := PhysicsShapeQueryParameters3D.new()
+	query.shape = capsule
+	query.collision_mask = mask
+
+	var spots: Array[Vector3] = [at]
+
+	for ring in [0.3, 0.6]:
+		for k in range(8):
+			var a := TAU * float(k) / 8.0
+			spots.append(at + Vector3(cos(a), 0.0, sin(a)) * ring)
+
+	for spot in spots:
+		query.transform = Transform3D(Basis.IDENTITY, spot + Vector3(0.0, hull.y * 0.5 + 0.02, 0.0))
+
+		if not space.intersect_shape(query, 1).is_empty():
+			continue
+
+		if spot != at:
+			var middle := Vector3(0.0, minf(hull.y, player.hull_height()) * 0.5, 0.0)
+			var through := PhysicsRayQueryParameters3D.create(at + middle, spot + middle, mask)
+			var down := PhysicsRayQueryParameters3D.create(spot + Vector3(0.0, 0.3, 0.0), spot + Vector3(0.0, -0.5, 0.0), mask)
+
+			if not space.intersect_ray(through).is_empty() or space.intersect_ray(down).is_empty():
+				continue
+
+			player.place_at(spot, player.controller.state.yaw)
+
+		return true
+
+	return false
 
 
 func _may_hide(player: PhPlayer, id: StringName) -> bool:
@@ -1044,14 +1107,24 @@ func reveal(id: StringName) -> bool:
 			refused.emit(id, "You can show yourself again in %d s." % int(ceilf(wait)))
 			return false
 
+		var body := DotPropDisguise.new()
+
+		if not _make_room(player, body):
+			refused.emit(id, "There is no room to stand up here.")
+			return false
+
 		var kept := player.disguise.duplicate_value()
-		_wear(player, DotPropDisguise.new())
+		_wear(player, body)
 		player.set_aside = kept
 		player.revealed_at = _now()
 		player.reveal_paid = 0.0
 		return true
 
 	if player.set_aside != null:
+		if not _make_room(player, player.set_aside):
+			refused.emit(id, "There is no room to be that here.")
+			return false
+
 		_wear(player, player.set_aside)
 		return true
 
@@ -1099,7 +1172,11 @@ func taunt(id: StringName, taunt_id: StringName = &"") -> bool:
 	if player == null or not player.is_alive() or player.watching or team_of(id) != PROPS:
 		return false
 
-	if phase == Phase.IDLE:
+	# Taunts start with the seek. A hunter cannot move yet, so a taunt during the hide is no
+	# risk; and the hunter's client is told nothing about where the props are then, so it
+	# would play the sound from wherever it last saw them, which is the wrong place.
+	if phase != Phase.SEEK:
+		refused.emit(id, "Taunts start when the hunters are let go.")
 		return false
 
 	var may := taunts.may_taunt(id, _now())

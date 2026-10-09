@@ -37,7 +37,7 @@ props/               kits.json (which Kenney models, at what scale), catalogue.j
 assets/props/        the vendored furniture and nature models (Kenney, CC0)
 taunts/              the taunt sounds and taunts.json (Kenney, CC0); edit freely
 maps/                link to ../mg-prop-hunt-maps/maps
-examples/            headless_run (73), headless_maps (41), headless_net (47), dedicated (39)
+examples/            headless_run (78), headless_maps (41), headless_net (49), dedicated (39)
 tools/               shot.sh/.gd (render a view), measure_props.gd, audio_probe (xvfb only)
 ```
 
@@ -47,11 +47,13 @@ Becoming a chair changes what the controller sweeps, what the hitbox is and how 
 
 **Both ends must agree, so both ends compute it from the same number.** A client predicting itself as a chair with a different capsule from the server's walks through a doorway the server's chair does not fit and is pulled back every tick. The size comes from `props/catalogue.json`, measured once offline by `tools/measure_props.gd`, because a headless server has the meshes but no business loading 163 of them to read their bounds. A DISGUISE event carries the prop, its turn and its lock; the receiving end rebuilds the hull from the catalogue. `headless_net` asserts the capsule and health equal on both ends and a running chair within 2 mm of the server's.
 
+**A hull changes size where the player stands, so the server looks for room first** (`PhGame._make_room`): the new capsule where they are, then a step of 0.3 or 0.6 m in eight directions, never through a wall and never off a floor, and otherwise a refusal ("There is no room…"). Without it a bottle by a wall that became a bookcase, or a small prop under a table that showed its face, was a capsule inside the wall or the table, which the motor resolves differently on each machine. Found in review (2026-10-09); `headless_run`'s "a bigger hull needs room" (armed by turning the check off: three fail).
+
 **Turning** is yaw (free, or locked with C so looking around does not turn you), tilt and lean in 15° steps up to 90°, and upright again. A lock or a tilt is the server's, asked for and announced.
 
 ## Decision 2: the blindfold is true on the wire
 
-The HUD paints a hunter's screen black during the hide, and a modifier (`PhController.BLINDFOLD`) holds them still on exactly the ticks the server does. Neither stops a client that skips the paint. So `net/ph_interest.gd` sends a hunter's snapshots **no prop at all** during the hide, evaluated every snapshot with no linger: a prop that kept being sent for a second after the hide began would be a second of where everybody ran. `headless_net` moves a prop on the server during the hide and asserts the hunter's copy did not move, then that it is right the tick seeking starts.
+The HUD paints a hunter's screen black during the hide, and a modifier (`PhController.BLINDFOLD`) holds them still on exactly the ticks the server does. Neither stops a client that skips the paint. So `net/ph_interest.gd` sends a hunter's snapshots **no prop at all** during the hide, evaluated every snapshot with no linger: a prop that kept being sent for a second after the hide began would be a second of where everybody ran. `headless_net` moves a prop on the server during the hide and asserts the hunter's copy did not move, then that it is right the tick seeking starts. **What the props became is held back the same way**: a DISGUISE event goes to every peer except a hunter during the hide, and each hunter is sent all of them when the seek starts (`PhNetBridge._on_disguise_changed`, `_on_phase_changed`). Without that a blindfolded client knew "two chairs and a plant", which is half of finding them; found in review, armed (`headless_net`'s "nor what it became").
 
 ## Decision 3: a wrong guess costs, and the furniture decides what is wrong
 
@@ -59,7 +61,7 @@ A shot whose impacts land inside a map prop's box, and not on a player, is a dec
 
 ## Decision 4: taunts are a choice with a price, and standing still is not free
 
-`DotPropTaunts` (dot-props): a taunt plays from where the prop stands, to everybody within `taunt_range`, and pays `taunt_points`. A prop that has not moved `auto_taunt_radius` in `auto_taunt_seconds` is taunted for, at `forced_taunt_points`; the meter on the HUD fills toward it, and a voluntary taunt resets it. The list is `taunts/taunts.json`, which an owner edits.
+`DotPropTaunts` (dot-props): **taunts start with the seek** (a taunt during the hide was no risk to the prop, and a hunter's client, told nothing about where the props are, played it from where it last saw them). A taunt plays from where the prop stands, to everybody within `taunt_range`, and pays `taunt_points`. A prop that has not moved `auto_taunt_radius` in `auto_taunt_seconds` is taunted for, at `forced_taunt_points`; the meter on the HUD fills toward it, and a voluntary taunt resets it. The list is `taunts/taunts.json`, which an owner edits.
 
 ## Decision 5: the end of a round finds the last props
 

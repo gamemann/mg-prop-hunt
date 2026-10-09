@@ -240,8 +240,7 @@ func attach(p_game: Object, p_net: DotNetManager) -> DotResult:
 		game.side_changed.connect(func(id: StringName, side: int) -> void:
 			_broadcast(PhEvents.Kind.TEAM, PhEvents.write_team(session_of(id), side))
 		)
-		game.disguise_changed.connect(func(id: StringName) -> void:
-			_broadcast(PhEvents.Kind.DISGUISE, _disguise_body(id)))
+		game.disguise_changed.connect(_on_disguise_changed)
 		game.taunted.connect(func(id: StringName, taunt_id: StringName, forced: bool) -> void:
 			_broadcast(PhEvents.Kind.TAUNT, PhEvents.write_taunt(session_of(id), taunt_id, forced)))
 		# Here and not in the module: the net suite has no module, and mg-deathrun found a handout
@@ -581,6 +580,40 @@ func _on_round_over(number: int, winner: int, why: String) -> void:
 func _on_phase_changed(phase: int) -> void:
 	_broadcast(PhEvents.Kind.PHASE, PhEvents.write_phase(phase))
 
+	# The hunters were told nothing about what anybody became while they were blindfolded;
+	# they are told everything now, after the PHASE, so their client is seeking when it hears.
+	if phase == PhGame.Phase.SEEK:
+		for peer_id in _ready_peers.keys():
+			if _is_hunter_peer(int(peer_id)):
+				_tell_every_disguise(int(peer_id))
+
+
+## What somebody became, to everybody who may know it.
+##
+## [b]Not to a hunter while the props hide.[/b] [PhInterest] keeps every prop out of a
+## hunter's snapshots then, so the client cannot say WHERE anybody is; a DISGUISE sent anyway
+## would still tell it WHAT everybody is ("two chairs and a plant"), which is half of finding
+## them. Held back until the seek starts, and sent then by [method _on_phase_changed].
+func _on_disguise_changed(id: StringName) -> void:
+	var body := _disguise_body(id)
+
+	for peer_id in _ready_peers.keys():
+		if not (game.phase == PhGame.Phase.HIDE and _is_hunter_peer(int(peer_id))):
+			_tell(int(peer_id), PhEvents.Kind.DISGUISE, body)
+
+
+func _is_hunter_peer(peer_id: int) -> bool:
+	return game.team_of(player_key(player_for_peer(peer_id))) == PhGame.HUNTERS
+
+
+## Every disguise there is, to one peer: a joiner, or a hunter whose blindfold just came off.
+func _tell_every_disguise(peer_id: int) -> void:
+	for other in _behaviours.keys():
+		var id := player_key(int(other))
+		var player: PhPlayer = game.players.get(id)
+		if player != null and (player.is_disguised() or player.set_aside != null):
+			_tell(peer_id, PhEvents.Kind.DISGUISE, _disguise_body(id))
+
 
 func _on_player_died(player_id: StringName, by: StringName, why: StringName) -> void:
 	_broadcast(PhEvents.Kind.DEATH, PhEvents.write_death(
@@ -915,12 +948,10 @@ func _admit(peer_id: int) -> void:
 		_tell(peer_id, PhEvents.Kind.JOIN, _join_body(int(other)))
 
 	# Everybody already hiding: a joiner who was not told would see a hunter shooting at a
-	# person standing in the open, and could not sweep its own prop's hull either.
-	for other in _behaviours.keys():
-		var id := player_key(int(other))
-		var player: PhPlayer = game.players.get(id)
-		if player != null and (player.is_disguised() or player.set_aside != null):
-			_tell(peer_id, PhEvents.Kind.DISGUISE, _disguise_body(id))
+	# person standing in the open, and could not sweep its own prop's hull either. A hunter
+	# joining during the hide is told when the seek starts, like every other hunter.
+	if not (game.phase == PhGame.Phase.HIDE and _is_hunter_peer(peer_id)):
+		_tell_every_disguise(peer_id)
 
 	_tell(peer_id, PhEvents.Kind.PHASE, PhEvents.write_phase(game.phase))
 	_tell(peer_id, PhEvents.Kind.CLOCK, _clock_body())

@@ -21,9 +21,9 @@ const PhProps := preload("../game/ph_props.gd")
 ## Every number about the map here is the built-in practice house's
 ## ([method PhCatalogue.practice]), whose comment lists where everything is.
 
-const SECTIONS := 17
+const SECTIONS := 18
 
-const CHECKS := 73
+const CHECKS := 78
 
 const TICK_RATE := 64
 const TICK := 1.0 / float(TICK_RATE)
@@ -61,6 +61,7 @@ func _run() -> void:
 	await _test_disguise()
 	await _test_reveal()
 	await _test_turning()
+	await _test_room()
 	await _test_taunts()
 	await _test_shots()
 	await _test_decoys()
@@ -324,6 +325,36 @@ func _test_reveal() -> void:
 	_finished()
 
 
+## A hull changes size where the player stands, so the server looks for room first.
+func _test_room() -> void:
+	_section("a bigger hull needs room: moved a step, or refused")
+	var game := await _hide_round()
+	var prop: PhPlayer = game.players_on(PhGame.PROPS)[0]
+
+	# Against the living room's west wall (inner face x -10.0) as a bedside cabinet, which fits,
+	# then a bookcase, whose hull would be inside the wall where the cabinet stands.
+	var _small := game.disguise_as(prop.player_id, &"furniture_cabinet_bed")
+	prop.place_at(Vector3(-9.75, 0.05, 2.0), 0.0)
+	await _step(game, 2)
+	var before := prop.controller.state.position
+	_check(game.disguise_as(prop.player_id, &"furniture_bookcase_closed"), "a cabinet against a wall may become a bookcase")
+	var moved := prop.controller.state.position.x - before.x
+	var hull := DotPropDisguise.hull(game.props_catalogue.size_of(&"furniture_bookcase_closed"), game.rules)
+	_check(moved > 0.02 and prop.controller.state.position.x - hull.x >= -10.0 - 0.01,
+		"and is moved off the wall by enough for its hull", "moved %.2f m, hull %.2f" % [moved, hull.x])
+
+	# Under the kitchen table (top at 0.75 m, chairs on both sides) as a bedside cabinet: there
+	# is no room to stand up anywhere a step away.
+	var _under := game.disguise_as(prop.player_id, &"furniture_cabinet_bed")
+	prop.place_at(Vector3(4.5, 0.05, 2.0), 0.0)
+	await _step(game, 2)
+	var refusals: Array = []
+	game.refused.connect(func(id: StringName, why: String) -> void: refusals.append(why))
+	_check(not game.reveal(prop.player_id) and prop.is_disguised(), "under a table a prop cannot stand up as a person")
+	_check(not refusals.is_empty() and str(refusals[-1]).contains("room"), "and is told why", str(refusals))
+	_finished()
+
+
 func _test_turning() -> void:
 	_section("turning a prop: locked, tilted, upright again")
 	var game := await _hide_round()
@@ -346,6 +377,7 @@ func _test_taunts() -> void:
 	var game := await _hide_round(func(c: PhConfig) -> void:
 		c.hide_seconds = 0.5
 		c.auto_taunt_seconds = 2.0
+		c.taunt_cooldown = 0.25
 		c.taunt_points = 2)
 	var prop: PhPlayer = game.players_on(PhGame.PROPS)[0]
 	_check(game.taunt_ids().size() > 10, "the taunt list is read (%d)" % game.taunt_ids().size())
@@ -354,11 +386,15 @@ func _test_taunts() -> void:
 	game.taunted.connect(func(id: StringName, taunt_id: StringName, forced: bool) -> void:
 		heard.append([id, taunt_id, forced]))
 	var points := prop.points
-	_check(game.taunt(prop.player_id, &"you_lose") and prop.points == points + 2, "a chosen taunt is paid")
-	_check(not game.taunt(prop.player_id), "and a second straight after is refused")
+	_check(not game.taunt(prop.player_id, &"you_lose") and prop.points == points,
+		"no taunt while the hunters are blindfolded")
 
 	while game.phase != PhGame.Phase.SEEK:
 		await _step(game, 1)
+
+	_check(game.taunt(prop.player_id, &"you_lose") and prop.points == points + 2,
+		"a chosen taunt while they hunt is paid (+%d)" % (prop.points - points))
+	_check(not game.taunt(prop.player_id), "and a second straight after is refused")
 
 	await _step(game, TICK_RATE)
 	_check(prop.taunt_meter > 0.3 and prop.taunt_meter < 0.8, "standing still fills the meter (%.2f at one second of two)" % prop.taunt_meter)
